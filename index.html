@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI White Background Converter</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@imgly/background-removal@1.4.5/dist/browser/index.global.js"></script>
+</head>
+<body class="bg-slate-100 min-h-screen flex items-center justify-center p-6 font-sans">
+
+    <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-3xl w-full text-center">
+        <h1 class="text-3xl font-bold text-slate-900 mb-2">White Background Converter</h1>
+        <p class="text-slate-600 mb-8">Upload or drop an image. We will remove the background and replace it with pure white, preserving the subject and image quality entirely within your browser.</p>
+
+        <div class="mb-8" id="uploadArea">
+            <label id="dropZone" for="imageUpload" class="cursor-pointer border-4 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50 transition-all rounded-2xl p-12 flex flex-col items-center justify-center group">
+                <svg class="w-16 h-16 text-slate-400 group-hover:text-blue-500 mb-4 transition-colors pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                </svg>
+                <span class="text-xl font-semibold text-slate-700 group-hover:text-blue-700 pointer-events-none">Drag & drop an image or click to browse</span>
+                <span class="text-slate-500 mt-2 pointer-events-none">Supports WebP, PNG, and JPG</span>
+                
+                <input type="file" id="imageUpload" accept="image/png, image/jpeg, image/webp, .webp, .png, .jpg, .jpeg" class="hidden">
+            </label>
+        </div>
+
+        <div id="loadingState" class="hidden flex-col items-center justify-center mb-8 py-10">
+            <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-5"></div>
+            <p class="text-lg text-slate-700 font-medium" id="loadingText">Analyzing image...</p>
+            <p class="text-sm text-slate-500 mt-2">(First run takes longer to load AI model)</p>
+        </div>
+
+        <div id="resultContainer" class="hidden flex-col items-center">
+            <h2 class="text-xl font-semibold text-slate-800 mb-5">Result (White Background):</h2>
+            
+            <div class="bg-white rounded-xl overflow-hidden shadow-inner border border-slate-200 mb-8 relative w-full flex items-center justify-center p-2 min-h-[300px]">
+                <img id="outputImage" src="" alt="Processed Image" class="max-w-full max-h-[500px] object-contain rounded">
+            </div>
+            
+            <div class="flex gap-4">
+                <button onclick="location.reload()" class="bg-slate-200 hover:bg-slate-300 text-slate-800 font-semibold py-3 px-8 rounded-xl transition">
+                    Upload Another
+                </button>
+                <a id="downloadBtn" href="#" download="white-background.png" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-8 rounded-xl shadow-md transition-transform transform hover:scale-105 flex items-center gap-2">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    Download High-Res
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const imageUpload = document.getElementById('imageUpload');
+        const dropZone = document.getElementById('dropZone');
+        const uploadArea = document.getElementById('uploadArea');
+        const loadingState = document.getElementById('loadingState');
+        const loadingText = document.getElementById('loadingText');
+        const resultContainer = document.getElementById('resultContainer');
+        const outputImage = document.getElementById('outputImage');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        // Drag and Drop Logic
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('border-blue-500', 'bg-blue-100'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-blue-500', 'bg-blue-100'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                processImage(file);
+            } else {
+                alert("Please drop a valid image file.");
+            }
+        }, false);
+
+        imageUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                processImage(file);
+            }
+        });
+
+        // --- THE FIX: Convert ANY image into pure Raw Pixels ---
+        function getRawPixels(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Extract raw pixel data instead of a formatted image file
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    URL.revokeObjectURL(img.src);
+                    resolve(imageData);
+                };
+                img.onerror = () => reject(new Error("Failed to load image into canvas"));
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        async function processImage(file) {
+            uploadArea.classList.add('hidden');
+            resultContainer.classList.add('hidden');
+            loadingState.classList.remove('hidden');
+            loadingState.classList.add('flex');
+            
+            try {
+                // 1. Strip away the file extension entirely by getting raw pixels
+                loadingText.innerText = "Extracting raw pixels...";
+                const rawPixelData = await getRawPixels(file);
+
+                // 2. Configure the AI Model explicitly
+                const config = {
+                    publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/',
+                    debug: true 
+                };
+
+                // 3. Pass the raw pixels to the AI
+                loadingText.innerText = "Running AI object detection... (This takes a moment)";
+                const transparentBlob = await imglyRemoveBackground(rawPixelData, config);
+                
+                // 4. Composite onto White 
+                loadingText.innerText = "Compositing onto white background...";
+                const finalImageDataUrl = await compositeSubjectOnWhite(transparentBlob);
+                
+                // 5. Update UI
+                outputImage.src = finalImageDataUrl;
+                downloadBtn.href = finalImageDataUrl;
+                
+                const originalName = file.name.substring(0, file.name.lastIndexOf('.')) || 'image';
+                downloadBtn.download = `${originalName}_white_bg.png`;
+                
+                loadingState.classList.add('hidden');
+                loadingState.classList.remove('flex');
+                resultContainer.classList.remove('hidden');
+                resultContainer.classList.add('flex');
+
+            } catch (error) {
+                console.error('Detailed Error:', error);
+                alert('Still failing! Please press F12, go to the Console tab, and look for the red error message to see what is blocking the AI.');
+                location.reload(); 
+            }
+        }
+
+        function compositeSubjectOnWhite(transparentBlob) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
+                    const ctx = canvas.getContext('2d');
+
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+
+                    resolve(canvas.toDataURL('image/png', 1.0));
+                    URL.revokeObjectURL(img.src);
+                };
+                img.onerror = reject;
+                img.src = URL.createObjectURL(transparentBlob);
+            });
+        }
+    </script>
+</body>
+</html>
