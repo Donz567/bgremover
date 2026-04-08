@@ -12,7 +12,7 @@
 
     <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-3xl w-full text-center">
         <h1 class="text-3xl font-bold text-slate-900 mb-2">White Background Converter</h1>
-        <p class="text-slate-600 mb-8">Upload or drop an image. We will remove the background and replace it with pure white, preserving the subject and image quality entirely within your browser.</p>
+        <p class="text-slate-600 mb-8">Upload or drop an image to instantly remove the background and replace it with pure white. High quality, processed entirely in your browser.</p>
 
         <div class="mb-8" id="uploadArea">
             <label id="dropZone" for="imageUpload" class="cursor-pointer border-4 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50 transition-all rounded-2xl p-12 flex flex-col items-center justify-center group">
@@ -29,7 +29,7 @@
         <div id="loadingState" class="hidden flex-col items-center justify-center mb-8 py-10">
             <div class="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600 mb-5"></div>
             <p class="text-lg text-slate-700 font-medium" id="loadingText">Analyzing image...</p>
-            <p class="text-sm text-slate-500 mt-2">(First run takes longer to load AI model)</p>
+            <p class="text-sm text-slate-500 mt-2">(First run takes a moment to load the AI model)</p>
         </div>
 
         <div id="resultContainer" class="hidden flex-col items-center">
@@ -63,58 +63,24 @@
 
         // Drag and Drop Logic
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, preventDefaults, false);
+            dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
         });
-
-        function preventDefaults(e) {
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
         ['dragenter', 'dragover'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => dropZone.classList.add('border-blue-500', 'bg-blue-100'), false);
         });
-
         ['dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-blue-500', 'bg-blue-100'), false);
         });
 
         dropZone.addEventListener('drop', (e) => {
             const file = e.dataTransfer.files[0];
-            if (file && file.type.startsWith('image/')) {
-                processImage(file);
-            } else {
-                alert("Please drop a valid image file.");
-            }
+            if (file && file.type.startsWith('image/')) processImage(file);
         }, false);
 
         imageUpload.addEventListener('change', (event) => {
             const file = event.target.files[0];
-            if (file) {
-                processImage(file);
-            }
+            if (file) processImage(file);
         });
-
-        // --- THE FIX: Convert ANY image into pure Raw Pixels ---
-        function getRawPixels(file) {
-            return new Promise((resolve, reject) => {
-                const img = new Image();
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.naturalWidth;
-                    canvas.height = img.naturalHeight;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0);
-                    
-                    // Extract raw pixel data instead of a formatted image file
-                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                    URL.revokeObjectURL(img.src);
-                    resolve(imageData);
-                };
-                img.onerror = () => reject(new Error("Failed to load image into canvas"));
-                img.src = URL.createObjectURL(file);
-            });
-        }
 
         async function processImage(file) {
             uploadArea.classList.add('hidden');
@@ -123,25 +89,15 @@
             loadingState.classList.add('flex');
             
             try {
-                // 1. Strip away the file extension entirely by getting raw pixels
-                loadingText.innerText = "Extracting raw pixels...";
-                const rawPixelData = await getRawPixels(file);
-
-                // 2. Configure the AI Model explicitly
-                const config = {
-                    publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/',
-                    debug: true 
-                };
-
-                // 3. Pass the raw pixels to the AI
-                loadingText.innerText = "Running AI object detection... (This takes a moment)";
-                const transparentBlob = await imglyRemoveBackground(rawPixelData, config);
+                loadingText.innerText = "Running AI object detection... (This may take a moment)";
                 
-                // 4. Composite onto White 
-                loadingText.innerText = "Compositing onto white background...";
+                // THE FIX: We pass the lightweight 'file' object directly to the AI, 
+                // completely avoiding the memory crash from our previous Raw Pixels idea.
+                const transparentBlob = await imglyRemoveBackground(file);
+                
+                loadingText.innerText = "Applying white background...";
                 const finalImageDataUrl = await compositeSubjectOnWhite(transparentBlob);
                 
-                // 5. Update UI
                 outputImage.src = finalImageDataUrl;
                 downloadBtn.href = finalImageDataUrl;
                 
@@ -154,8 +110,8 @@
                 resultContainer.classList.add('flex');
 
             } catch (error) {
-                console.error('Detailed Error:', error);
-                alert('Still failing! Please press F12, go to the Console tab, and look for the red error message to see what is blocking the AI.');
+                console.error(error);
+                alert('Processing failed. Please check your console (F12) for details.');
                 location.reload(); 
             }
         }
