@@ -12,7 +12,7 @@
 
     <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-3xl w-full text-center">
         <h1 class="text-3xl font-bold text-slate-900 mb-2">White Background Converter</h1>
-        <p class="text-slate-600 mb-8">Upload or drop an image to instantly remove the background and replace it with pure white. High quality, processed entirely in your browser.</p>
+        <p class="text-slate-600 mb-8">Upload or drop an image. We will remove the background and replace it with pure white, preserving the subject and image quality entirely within your browser.</p>
 
         <div class="mb-8" id="uploadArea">
             <label id="dropZone" for="imageUpload" class="cursor-pointer border-4 border-dashed border-slate-300 hover:border-blue-500 bg-slate-50 hover:bg-blue-50 transition-all rounded-2xl p-12 flex flex-col items-center justify-center group">
@@ -63,18 +63,29 @@
 
         // Drag and Drop Logic
         ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, e => { e.preventDefault(); e.stopPropagation(); }, false);
+            dropZone.addEventListener(eventName, preventDefaults, false);
         });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
         ['dragenter', 'dragover'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => dropZone.classList.add('border-blue-500', 'bg-blue-100'), false);
         });
+
         ['dragleave', 'drop'].forEach(eventName => {
             dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-blue-500', 'bg-blue-100'), false);
         });
 
         dropZone.addEventListener('drop', (e) => {
             const file = e.dataTransfer.files[0];
-            if (file && file.type.startsWith('image/')) processImage(file);
+            if (file && file.type.startsWith('image/')) {
+                processImage(file);
+            } else {
+                alert("Please drop a valid image file.");
+            }
         }, false);
 
         imageUpload.addEventListener('change', (event) => {
@@ -91,11 +102,15 @@
             try {
                 loadingText.innerText = "Running AI object detection... (This may take a moment)";
                 
-                // THE FIX: We pass the lightweight 'file' object directly to the AI, 
-                // completely avoiding the memory crash from our previous Raw Pixels idea.
-                const transparentBlob = await imglyRemoveBackground(file);
+                // THE FIX: The config object MUST be here so GitHub Pages knows where to fetch the model from
+                const config = {
+                    publicPath: 'https://staticimgly.com/@imgly/background-removal-data/1.4.5/dist/'
+                };
+
+                // We pass the lightweight 'file' AND the config!
+                const transparentBlob = await imglyRemoveBackground(file, config);
                 
-                loadingText.innerText = "Applying white background...";
+                loadingText.innerText = "Compositing onto white background...";
                 const finalImageDataUrl = await compositeSubjectOnWhite(transparentBlob);
                 
                 outputImage.src = finalImageDataUrl;
@@ -110,7 +125,7 @@
                 resultContainer.classList.add('flex');
 
             } catch (error) {
-                console.error(error);
+                console.error('Detailed Error:', error);
                 alert('Processing failed. Please check your console (F12) for details.');
                 location.reload(); 
             }
